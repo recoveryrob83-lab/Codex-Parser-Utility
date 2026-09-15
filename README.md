@@ -1,6 +1,6 @@
 # Codex Telemetry Parser v0.1
 
-Small stdlib-only CLI that converts one completed Codex rollout turn (`rollout-*.jsonl`) into an additive PennyTel schema-v1 import JSON file.
+Small stdlib-only utility that converts completed Codex rollout turns (`rollout-*.jsonl`) into additive PennyTel schema-v1 import JSON files.
 
 v0.1 deliberately targets **only fields PennyTel already accepts**. It does not copy prompts, hidden/encrypted reasoning, tool commands, source excerpts, or tool output into the PennyTel artifact.
 
@@ -20,18 +20,56 @@ Important token rule: Codex `input_tokens` includes cached input. PennyTel fresh
 
 Quota is intentionally **not** written to PennyTel `usageBefore` / `usageAfter` in v0.1. The Codex meter observed so far is a coarse global whole-percent signal and can be contaminated by concurrent sessions. The raw snapshot is retained in notes without fabricating precise per-run attribution.
 
-## Required operator metadata
+## Semantic-label safety rule
 
-Codex does not know PennyTel's semantic run identity. Supply:
+Codex can authoritatively tell us what model ran, when it ran, where it ran, and how many tokens it used. It does **not** authoritatively know PennyOS concepts such as Implementation, Critic, Repair, or Context Scout.
 
-- existing `--slice-id`
-- new unique `--run-id`
-- `--run-type`
-- `--role`
+Therefore the workflow is:
 
-Optional existing PennyTel fields can also be supplied (`--candidate`, `--session-mode`, `--context-mode`, `--result`, `--notes`).
+**inspect evidence -> confirm semantic labels -> emit import JSON -> import into PennyTel**
 
-## Usage
+The UI never silently turns an ambiguous session into a confidently labeled run.
+
+## GUI wrapper
+
+Run from the repository root:
+
+```bash
+python3 apps/codex-telemetry-parser/codex_parser_ui.py
+```
+
+The UI supports:
+
+1. Select one rollout file or a folder tree containing `rollout-*.jsonl` files.
+2. Select an output folder.
+3. Inspect model, thinking effort, active minutes, inferred slice, semantic labels, and status before parsing.
+4. Supply optional overrides for slice ID, run type, role, session mode, context mode, and result.
+5. Click **Parse data** to write one PennyTel JSON file per eligible rollout.
+
+When a folder tree is selected, the output preserves its relative subfolder structure.
+
+### Conservative folder-label presets
+
+Exact folder names can provide operator-authored semantic labels:
+
+- `implementation/` -> `Implementation` / `Implementer`
+- `independent-critic/` or `initial-critic/` -> `Independent Critic` / `Critic`
+- `re-critic/` or `recritic/` -> `Re-Critic` / `Critic`
+- `repair/` -> `Repair` / `Repair`
+- `context-scout/`, `scout/`, or `scouting/` -> `Context Scout` / `Context Steward`
+- `master-index-mapper/`, `master-index/`, or `mapper/` -> `MASTER_INDEX Mapper` / `Context Steward`
+
+A broad `critic/` folder infers only the **Critic role**, not whether the run was an initial critic or re-critic. The exact run type must still be supplied. This is intentional.
+
+The UI can infer `S4`, `S5`, etc. only when Codex provenance contains an explicit `slice-N` pattern in cwd or branch. Otherwise it requires a slice override.
+
+`codex-auto-review` sessions are shown and skipped rather than emitted as production telemetry.
+
+Files with multiple completed turns are not guessed at in v0.1; they are flagged for turn selection instead.
+
+## CLI
+
+The CLI remains available for precise one-off work:
 
 ```bash
 python3 apps/codex-telemetry-parser/codex_to_pennytel.py \
@@ -45,6 +83,15 @@ python3 apps/codex-telemetry-parser/codex_to_pennytel.py \
   --result Completed \
   -o /tmp/pennytel-codex-import.json
 ```
+
+Required operator metadata for the CLI:
+
+- existing `--slice-id`
+- new unique `--run-id`
+- `--run-type`
+- `--role`
+
+Optional existing PennyTel fields can also be supplied (`--candidate`, `--session-mode`, `--context-mode`, `--result`, `--notes`).
 
 The output is a normal additive PennyTel dataset:
 
@@ -62,7 +109,7 @@ The output is a normal additive PennyTel dataset:
 
 The referenced slice must already exist in PennyTel. PennyTel remains the authority for import validation, registry pricing snapshots, and duplicate/conflict checks.
 
-If a rollout file contains multiple completed Codex tasks, the parser refuses to guess. Re-run with `--turn-id <id>`.
+If a rollout file contains multiple completed Codex tasks, the CLI refuses to guess. Re-run with `--turn-id <id>`.
 
 ## Tests
 
@@ -70,4 +117,8 @@ If a rollout file contains multiple completed Codex tasks, the parser refuses to
 python3 -m unittest discover -s apps/codex-telemetry-parser/tests -v
 ```
 
-The repository does not store raw Codex session logs. Keep them as local source evidence; the parser output is intentionally privacy-reduced.
+The repository does not store raw Codex session logs. Keep them as local source evidence; parser output is intentionally privacy-reduced.
+
+## Versioning direction
+
+The parser/UI is an adapter, not the telemetry authority. Future versions can add a target selector (for example, current PennyTel schema v1 vs a later telemetry schema) while preserving the raw Codex logs as source evidence. That lets us re-parse old sessions when PennyTel learns to ingest richer telemetry without having to recapture the original runs.

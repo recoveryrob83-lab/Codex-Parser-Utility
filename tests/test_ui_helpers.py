@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import codex_parser_ui as ui
+from test_codex_to_pennytel import fixture
 
 
 class UIHelperTests(unittest.TestCase):
@@ -25,6 +26,15 @@ class UIHelperTests(unittest.TestCase):
         self.assertEqual(ui.infer_slice_id('eng/pennytel-slice-4-accepted-outcome-economics'), 'S4')
         self.assertIsNone(ui.infer_slice_id('eng/pennytel-comparison-plan-runner'))
 
+    def test_inspection_never_turns_path_into_slice_semantics(self):
+        with tempfile.TemporaryDirectory(prefix="slice-99-") as temp:
+            path = Path(temp) / "implementation" / "rollout-a.jsonl"
+            path.parent.mkdir(); path.write_text(fixture(), encoding="utf-8")
+            item = ui.inspect_log(path)
+            self.assertIsNone(item.slice_id)
+            self.assertEqual((item.inferred_run_type, item.inferred_role), ("Implementation", "Implementer"))
+            self.assertEqual(item.status, "Needs labels")
+
     def test_output_preserves_input_subfolders(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'input'
@@ -33,7 +43,7 @@ class UIHelperTests(unittest.TestCase):
             source.touch()
             item = ui.InspectedLog(source, [], None, {}, {}, None, None, None, 'S5', 'Implementation', 'Implementer', 'Ready')
             destination = ui.output_path_for(item, root, Path(temp) / 'output')
-            self.assertEqual(destination.relative_to(Path(temp) / 'output'), Path('implementation/rollout-a.pennytel.json'))
+            self.assertEqual(destination.relative_to(Path(temp) / 'output'), Path('implementation') / ui.core.output_filename(source))
 
 
 if __name__ == '__main__':

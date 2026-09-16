@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout parser
+        uses: actions/checkout@v4
+        with:
+          path: parser
+
+      - name: Checkout PennyTel authority
+        uses: actions/checkout@v4
+        with:
+          repository: recoveryrob83-lab/PennyTel-AX
+          ref: main
+          path: PennyTel-AX
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: PennyTel-AX/package-lock.json
+
+      - name: Install PennyTel dependencies
+        working-directory: PennyTel-AX
+        run: npm ci
+
+      - name: Install Tkinter
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+
+      - name: Run parser tests
+        working-directory: parser
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Run PennyTel compatibility smoke
+        working-directory: parser
+        run: python3 tests/smoke_pennytel.py ../PennyTel-AX
